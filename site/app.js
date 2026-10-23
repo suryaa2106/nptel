@@ -1,9 +1,9 @@
 (function(){
 "use strict";
 
-const LET = ["a","b","c","d"];
+const LET = ["a","b","c","d","e","f","g"];
 const QS = RAW.map((r,i)=>({
-  id:i+1, week:r[0], text:r[1], opts:r[2], ans:LET.indexOf(r[3]), topic:r[4], level:r[5], exp:r[6]||"", note:r[7]||""
+  id:i+1, week:r[0], text:r[1], opts:r[2], ans:[...r[3]].map(c=>LET.indexOf(c)), topic:r[4], level:r[5], exp:r[6]||"", note:r[7]||""
 }));
 const TOPIC = Object.fromEntries(TOPICS.map(t=>[t.id,t]));
 const $app = document.getElementById("app");
@@ -19,8 +19,8 @@ const fixedOrder = q => q.opts.some(o=>/(all|none|both) of the above|^all /i.tes
 
 /* ---------------- shared question card ---------------- */
 function qCard(q, n){
-  const lv = `<span class="tag l${q.level}">${LEVELS[q.level]}</span>`;
-  const opts = q.opts.map((o,i)=>`<li class="${i===q.ans?"right":""}"><b>${LET[i]})</b><span>${esc(o)}</span></li>`).join("");
+  const lv = `<span class="tag l${q.level}">${LEVELS[q.level]}</span>`+(q.ans.length>1?`<span class="tag">Multi-select</span>`:"");
+  const opts = q.opts.map((o,i)=>`<li class="${q.ans.includes(i)?"right":""}"><b>${LET[i]})</b><span>${esc(o)}</span></li>`).join("");
   return `<article class="card q" id="q${q.id}">
     <div class="qn">${n}</div>
     <div class="qb">
@@ -81,14 +81,14 @@ function viewQA(){
     const art=e.target.closest("article"); if(!art) return;
     const id = +art.id.slice(1);
     const q = QS.find(x=>x.id===id);
-    art.querySelectorAll(".opts li").forEach((li,i)=>{ if(i===q.ans){li.classList.toggle("showme");li.style.cssText = li.classList.contains("showme")?"background:var(--ok-bg);border-color:var(--ok);color:var(--ok)":"";} });
+    art.querySelectorAll(".opts li").forEach((li,i)=>{ if(q.ans.includes(i)){li.classList.toggle("showme");li.style.cssText = li.classList.contains("showme")?"background:var(--ok-bg);border-color:var(--ok);color:var(--ok)":"";} });
   };
   render();
 }
 
 /* ---------------- 2. Quiz ---------------- */
 let quiz = null;
-const best = () => store.get("spm_best",{});
+const best = () => store.get("spm_best2",{});
 const QUIZ_MODES = [
   {id:"1", name:"Level 1 - Easy", desc:"Definitions and direct recall."},
   {id:"2", name:"Level 2 - Medium", desc:"Concept and comparison questions."},
@@ -109,7 +109,7 @@ function pickQuestions(mode, n, topic){
   } else chosen = shuffle(pool.filter(q=>q.level==mode)).slice(0,n);
   return chosen.map(q=>{
     const order = fixedOrder(q) ? q.opts.map((_,i)=>i) : shuffle(q.opts.map((_,i)=>i));
-    return {q, opts:order.map(i=>q.opts[i]), ans:order.indexOf(q.ans), pick:null};
+    return {q, opts:order.map(i=>q.opts[i]), ans:q.ans.map(a=>order.indexOf(a)), pick:[]};
   });
 }
 
@@ -122,7 +122,7 @@ function viewQuizSetup(topic){
     ${topic?"":`<div class="lvl-grid" id="modes">${QUIZ_MODES.map(m=>`
       <button class="lvl ${cfg.mode===m.id?"on":""}" data-m="${m.id}">
         <h3>${m.name}</h3><p>${m.desc}</p>
-        <p style="margin-top:8px">Best: <b>${b[m.id]!=null?b[m.id]+"%":"none yet"}</b></p>
+        <p style="margin-top:8px">${m.id==="mix"?QS.length:QS.filter(q=>q.level==m.id).length} questions in pool. Best: <b>${b[m.id]!=null?b[m.id]+"%":"none yet"}</b></p>
       </button>`).join("")}</div>`}
     <div class="card" style="margin-top:14px">
       <div class="row">
@@ -155,25 +155,29 @@ function tick(){
 }
 function renderQuiz(){
   const it = quiz.items[quiz.i], n = quiz.items.length;
-  const answered = quiz.items.filter(x=>x.pick!==null).length;
+  const answered = quiz.items.filter(x=>x.pick.length).length;
+  const multi = it.ans.length>1;
   $app.innerHTML = `
     <div class="card">
       <div class="qhead"><span>Question ${quiz.i+1} of ${n}</span><span class="timer" id="tm">--</span></div>
       <div class="bar"><i style="width:${answered/n*100}%"></i></div>
-      <div class="meta" style="margin-top:12px"><span class="tag l${it.q.level}">${LEVELS[it.q.level]}</span><span class="tag">Week ${it.q.week}</span></div>
+      <div class="meta" style="margin-top:12px"><span class="tag l${it.q.level}">${LEVELS[it.q.level]}</span><span class="tag">Week ${it.q.week}</span>${multi?`<span class="tag">Multi-select: tick every correct option</span>`:""}</div>
       <p class="qt">${esc(it.q.text)}</p>
       ${it.q.note?`<div class="note">${esc(it.q.note)}</div>`:""}
-      <ul class="opts click" id="o">${it.opts.map((o,i)=>`<li data-i="${i}" class="${it.pick===i?"pick":""}"><b>${LET[i]})</b><span>${esc(o)}</span></li>`).join("")}</ul>
+      <ul class="opts click" id="o">${it.opts.map((o,i)=>`<li data-i="${i}" class="${it.pick.includes(i)?"pick":""}"><b>${multi?(it.pick.includes(i)?"[x]":"[ ]"):""} ${LET[i]})</b><span>${esc(o)}</span></li>`).join("")}</ul>
       <div class="nav">
         <button id="prev" ${quiz.i===0?"disabled":""}>Previous</button>
         ${quiz.i<n-1?`<button class="primary" id="next">Next</button>`:`<button class="primary" id="fin">Submit</button>`}
       </div>
     </div>
-    <div class="card"><div class="palette" style="margin:0">${quiz.items.map((x,i)=>`<button data-j="${i}" class="${x.pick!==null?"done":""} ${i===quiz.i?"cur":""}">${i+1}</button>`).join("")}</div>
+    <div class="card"><div class="palette" style="margin:0">${quiz.items.map((x,i)=>`<button data-j="${i}" class="${x.pick.length?"done":""} ${i===quiz.i?"cur":""}">${i+1}</button>`).join("")}</div>
       <div class="right-btns"><button id="fin2">Submit now (${answered}/${n} answered)</button></div></div>`;
   document.getElementById("o").onclick = e=>{
     const li=e.target.closest("li"); if(!li) return;
-    it.pick = it.pick===+li.dataset.i ? null : +li.dataset.i; renderQuiz(); tick();
+    const k=+li.dataset.i;
+    if(multi) it.pick = it.pick.includes(k) ? it.pick.filter(v=>v!==k) : [...it.pick,k];
+    else it.pick = it.pick[0]===k ? [] : [k];
+    renderQuiz(); tick();
   };
   const go = d => { quiz.i+=d; renderQuiz(); tick(); window.scrollTo(0,0); };
   document.getElementById("prev").onclick = ()=>go(-1);
@@ -184,28 +188,35 @@ function renderQuiz(){
   tick();
 }
 function confirmFinish(){
-  const un = quiz.items.filter(x=>x.pick===null).length;
+  const un = quiz.items.filter(x=>!x.pick.length).length;
   if(un && !confirm(`${un} question(s) are unanswered. Submit anyway?`)) return;
   finishQuiz();
+}
+// NPTEL style marking: any wrong option ticked gives 0, otherwise marks = correct ticked / total correct
+function score(x){
+  if(!x.pick.length || x.pick.some(p=>!x.ans.includes(p))) return 0;
+  return x.pick.length/x.ans.length;
 }
 let reviewFilter = "all";
 function finishQuiz(){
   if(!quiz) return;
   clearInterval(quiz.timer);
-  const n=quiz.items.length, ok=quiz.items.filter(x=>x.pick===x.ans).length;
+  const n=quiz.items.length, exact=quiz.items.filter(x=>score(x)===1).length;
+  const ok=Math.round(quiz.items.reduce((t,x)=>t+score(x),0)*100)/100;
   const pct=Math.round(ok/n*100), secs=Math.round((Date.now()-quiz.start)/1000);
-  quiz.result={ok,n,pct,secs};
-  if(!quiz.topic){ const b=best(); if(b[quiz.mode]==null||pct>b[quiz.mode]){ b[quiz.mode]=pct; store.set("spm_best",b); } }
+  quiz.result={ok,n,pct,secs,exact};
+  if(!quiz.topic){ const b=best(); if(b[quiz.mode]==null||pct>b[quiz.mode]){ b[quiz.mode]=pct; store.set("spm_best2",b); } }
   reviewFilter="all";
   renderResult();
 }
 function renderResult(){
-  const {ok,n,pct,secs}=quiz.result;
+  const {ok,n,pct,secs,exact}=quiz.result;
   const msg = pct>=80?"Excellent. You are exam ready.":pct>=60?"Good. Review the wrong ones below.":"Keep going. Read the Important Topics page and retry.";
-  const items = quiz.items.map((x,i)=>({x,i})).filter(({x})=>reviewFilter==="all"||x.pick!==x.ans);
+  const items = quiz.items.map((x,i)=>({x,i})).filter(({x})=>reviewFilter==="all"||score(x)<1);
   $app.innerHTML = `
     <div class="card">
       <div class="score">${ok}<small> / ${n}</small> &nbsp;<small>${pct}%</small></div>
+      <p class="sub" style="margin:6px 0 0">${exact} fully correct. Partial marks are given when you tick only correct options but miss some. Any wrong tick gives 0.</p>
       <p class="sub" style="margin:8px 0 0">${msg} Time taken: ${Math.floor(secs/60)}m ${secs%60}s.</p>
       <div class="right-btns">
         <button class="primary" id="again">New shuffled run</button>
@@ -214,13 +225,13 @@ function renderResult(){
       </div>
     </div>
     ${items.length?items.map(({x,i})=>{
-      const right = x.pick===x.ans;
+      const sc = score(x), right = sc===1;
       return `<article class="card q"><div class="qn">${i+1}</div><div class="qb">
         <div class="meta"><span class="tag l${x.q.level}">${LEVELS[x.q.level]}</span><span class="tag">Week ${x.q.week}</span>
-        <span class="tag" style="${right?"background:var(--ok-bg);color:var(--ok)":"background:var(--bad-bg);color:var(--bad)"}">${x.pick===null?"Skipped":right?"Correct":"Wrong"}</span></div>
+        <span class="tag" style="${right?"background:var(--ok-bg);color:var(--ok)":"background:var(--bad-bg);color:var(--bad)"}">${!x.pick.length?"Skipped":right?"Correct":sc>0?"Partial "+sc.toFixed(2):"Wrong"}</span>${x.ans.length>1?`<span class="tag">Multi-select</span>`:""}</div>
         <p class="qt">${esc(x.q.text)}</p>
         ${x.q.note?`<div class="note">${esc(x.q.note)}</div>`:""}
-        <ul class="opts">${x.opts.map((o,k)=>`<li class="${k===x.ans?"right":k===x.pick?"wrong":""}"><b>${LET[k]})</b><span>${esc(o)}${k===x.pick?" (your answer)":""}</span></li>`).join("")}</ul>
+        <ul class="opts">${x.opts.map((o,k)=>`<li class="${x.ans.includes(k)?"right":x.pick.includes(k)?"wrong":""}"><b>${LET[k]})</b><span>${esc(o)}${x.pick.includes(k)?" (your answer)":""}</span></li>`).join("")}</ul>
         ${x.q.exp?`<div class="exp"><b>Why:</b> ${esc(x.q.exp)}</div>`:""}</div></article>`;}).join("")
       : `<div class="card">Nothing wrong. Perfect run!</div>`}`;
   document.getElementById("again").onclick = ()=>startQuiz(quiz.topic);
@@ -237,10 +248,12 @@ function viewTopics(){
     <p class="sub">Revise the key points, then try the related questions. Topics with more stars are the ones asked most often (calculations, NOT/FALSE traps and definitions).</p>
     <div class="card"><b>Quick formula sheet</b>
       <ul class="pts">
-        <li>1 man-month = <b>152</b> hours &nbsp;|&nbsp; Putnam: effort &prop; 1/time<sup>4</sup> (half the time = <b>16x</b> effort)</li>
-        <li>ES = max(EF of predecessors) &nbsp;|&nbsp; LF = min(LS of successors) &nbsp;|&nbsp; Slack = LS - ES</li>
+        <li>1 person-month = <b>152</b> hours &nbsp;|&nbsp; Effort = size / productivity &nbsp;|&nbsp; Jensen: effort &prop; 1/time<sup>2</sup> (3x faster = <b>9x</b> effort)</li>
+        <li>VAF = 0.65 + 0.01 x (sum of 14 DI) &nbsp;|&nbsp; UFP weights (avg): input 4, output 5, inquiry 4, file 10, interface 7</li>
+        <li>PERT: expected = (O + 4M + P)/6 &nbsp;|&nbsp; SD = (P - O)/6 &nbsp;|&nbsp; variance = SD<sup>2</sup></li>
+        <li>EF = ES + duration &nbsp;|&nbsp; LS = LF - duration &nbsp;|&nbsp; Float = LS - ES &nbsp;|&nbsp; critical path = zero float</li>
         <li>SV = EV - PV &nbsp;|&nbsp; CV = EV - AC &nbsp;|&nbsp; SPI = EV/PV &nbsp;|&nbsp; CPI = EV/AC</li>
-        <li>Availability = MTBF/(MTBF+MTTR) &nbsp;|&nbsp; POFOD = failures/demands</li>
+        <li>POFOD = failures/demands &nbsp;|&nbsp; Six Sigma = 3.4 defects per million</li>
         <li>CMM: 1 Initial, 2 Repeatable, 3 Defined, 4 Managed, 5 Optimizing</li>
       </ul></div>
     ${order.map(t=>{
@@ -256,7 +269,7 @@ function viewTopics(){
         <div style="margin-top:12px"><b>Questions on this topic</b>
           ${qs.map(q=>`<details class="tq"><summary>${esc(q.text)}</summary>
             ${q.note?`<div class="note">${esc(q.note)}</div>`:""}
-            <ul class="opts">${q.opts.map((o,i)=>`<li class="${i===q.ans?"right":""}"><b>${LET[i]})</b><span>${esc(o)}</span></li>`).join("")}</ul>
+            <ul class="opts">${q.opts.map((o,i)=>`<li class="${q.ans.includes(i)?"right":""}"><b>${LET[i]})</b><span>${esc(o)}</span></li>`).join("")}</ul>
             ${q.exp?`<div class="exp"><b>Why:</b> ${esc(q.exp)}</div>`:""}</details>`).join("")}
         </div></section>`;}).join("")}`;
   $app.onclick = e=>{
